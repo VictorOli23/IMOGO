@@ -1,24 +1,29 @@
 import os
 import streamlit as st
-import google.generativeai as genai
+from openai import OpenAI
 from PIL import Image
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 import bcrypt
 from datetime import datetime
+import base64
 from dotenv import load_dotenv
 
 # --- CONFIGURAÇÃO INICIAL DA PÁGINA ---
 st.set_page_config(page_title="Gerador Imobiliário IA", page_icon="🏠", layout="wide", initial_sidebar_state="expanded")
 
-# Carrega as variáveis de ambiente
+# Carrega as variáveis de ambiente (local)
 load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dcsdcvs_db_user:32384820Ca@cluster0.w4kupji.mongodb.net/gerador_imoveis_db?appName=Cluster0")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# --- ADMINISTRADOR DINÂMICO (VIA VARIÁVEL DE AMBIENTE) ---
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 EMAIL_ADMIN = os.getenv("EMAIL_ADMIN", "") 
+
+# --- CONFIGURAÇÃO DO CLIENTE AI (GITHUB MODELS / OPENAI) ---
+client_ai = OpenAI(
+    base_url="https://models.inference.ai.azure.com",
+    api_key=GITHUB_TOKEN
+)
 
 @st.cache_resource 
 def init_connection():
@@ -28,9 +33,6 @@ client = init_connection()
 db = client.gerador_imoveis_db 
 colecao_usuarios = db.usuarios 
 colecao_historico = db.historico 
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
 # --- FUNÇÕES CORE ---
 def formatar_imagem(imagem, formato):
@@ -53,6 +55,12 @@ def formatar_imagem(imagem, formato):
     right = (w + target_w) / 2
     bottom = (h + target_h) / 2
     return imagem.crop((left, top, right, bottom))
+
+def imagem_para_base64(imagem_pil):
+    import io
+    buffered = io.BytesIO()
+    imagem_pil.save(buffered, format="JPEG")
+    return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 def cadastrar_usuario(email, senha):
     if colecao_usuarios.find_one({"email": email}):
@@ -174,7 +182,7 @@ else:
             st.session_state.usuario_logado = None
             st.rerun()
             
-    # --- PAINEL DE ADMINISTRADOR EXCLUSIVO (Verifica de forma segura) ---
+    # --- PAINEL DE ADMINISTRADOR EXCLUSIVO ---
     if EMAIL_ADMIN and user['email'] == EMAIL_ADMIN:
         with st.expander("👑 PAINEL DE GESTÃO DO SAAS", expanded=False):
             st.markdown("Controlo de Utilizadores")
@@ -229,33 +237,52 @@ else:
                     submit = st.form_submit_button("Gerar Material Completo 🚀")
 
             if submit:
-                if not GEMINI_API_KEY:
-                    st.error("⚠️ Falha: Chave da API Gemini não configurada.")
+                if not GITHUB_TOKEN:
+                    st.error("⚠️ Falha: GITHUB_TOKEN não configurado nas Secrets.")
                 elif not arquivos_fotos:
                     st.warning("⚠️ Adicione pelo menos uma fotografia para ativar a análise visual.")
                 elif not redes_sociais:
                     st.warning("⚠️ Selecione pelo menos uma plataforma.")
                 else:
                     imagens_pil = [Image.open(foto) for foto in arquivos_fotos]
-                    model = genai.GenerativeModel('gemini-3.8-flash')
-
-                    prompt = f"""
-                    Atue como copywriter imobiliário. Analise as fotografias deste imóvel ({tipo}) em {bairro}.
-                    Diferenciais: {diferenciais}. Tom: {tom_venda}.
-                    ANÁLISE VISUAL: Descreva os acabamentos e a luz natural que observa nas imagens.
-                    Escreva publicações para: {', '.join(redes_sociais)}.
-                    """
-
-                    with st.spinner("🧠 A IA está a redigir os textos..."):
+                    
+                    with st.spinner("🧠 A IA do GitHub Models está a analisar as imagens e a redigir os textos..."):
                         try:
-                            conteudo_ia = [prompt] + imagens_pil
-                            response = model.generate_content(conteudo_ia)
+                            img_base64 = imagem_para_base64(imagens_pil[0])
                             
-                            registrar_uso_e_historico(user["id"], tipo, bairro, response.text)
+                            response = client_ai.chat.completions.create(
+                                model="gpt-4o-mini",
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": "Você é um copywriter imobiliário de elite focado em alta conversão e análise visual de acabamentos e luminosidade de imóveis."
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {
+                                                "type": "text", 
+                                                "text": f"Analise as fotografias deste imóvel ({tipo}) localizado em {bairro}. Diferenciais informados: {diferenciais}. Tom da publicação: {tom_venda}. Escreva publicações específicas e separadas para: {', '.join(redes_sociais)}."
+                                            },
+                                            {
+                                                "type": "image_url",
+                                                "image_url": {
+                                                    "url": f"data:image/jpeg;base64,{img_base64}"
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                max_tokens=1500
+                            ]
+                            
+                            texto_resposta = response.choices[0].message.content
+                            
+                            registrar_uso_e_historico(user["id"], tipo, bairro, texto_resposta)
                             
                             st.success("✅ O seu material de marketing está pronto!")
                             st.markdown("### 📝 Textos Otimizados")
-                            st.markdown(response.text)
+                            st.markdown(texto_resposta)
                             
                             st.markdown("### 🖼️ Imagens Cortadas")
                             for rede in redes_sociais:
@@ -265,7 +292,7 @@ else:
                                     st.image(img_formatada, use_container_width=True)
                             
                         except Exception as e:
-                            st.error(f"Ocorreu um erro: {e}")
+                            st.error(f"Ocorreu um erro com a IA: {e}")
 
     with aba_historico:
         st.markdown("### 🗂️ Publicações Anteriores")
