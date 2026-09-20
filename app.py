@@ -237,7 +237,7 @@ else:
                     st.warning("⚠️ Selecione pelo menos uma plataforma.")
                 else:
                     imagens_pil = [Image.open(foto) for foto in arquivos_fotos]
-                    model = genai.GenerativeModel('gemini-1.5-flash') 
+                    model = genai.GenerativeModel('gemini-2.5-flash') 
 
                     prompt = f"""
                     Atue como copywriter imobiliário. Analise as fotografias deste imóvel ({tipo}) em {bairro}.
