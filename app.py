@@ -262,7 +262,7 @@ else:
                                 if rede in ["Instagram (Feed)", "Instagram (Stories)", "Facebook (Post)", "WhatsApp (Status)"]:
                                     st.subheader(f"Formato: {rede}")
                                     img_formatada = formatar_imagem(imagens_pil[0], rede)
-                                    st.image(img_formatada, use_column_width=True)
+                                    st.image(img_formatada, use_container_width=True)
                             
                         except Exception as e:
                             st.error(f"Ocorreu um erro: {e}")
