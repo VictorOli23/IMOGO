@@ -274,7 +274,7 @@ else:
                                     }
                                 ],
                                 max_tokens=1500
-                            ]
+                            )
                             
                             texto_resposta = response.choices[0].message.content
                             
