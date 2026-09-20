@@ -22,7 +22,8 @@ EMAIL_ADMIN = os.getenv("EMAIL_ADMIN", "")
 # --- CONFIGURAÇÃO DO CLIENTE AI (GITHUB MODELS / OPENAI) ---
 client_ai = OpenAI(
     base_url="https://models.inference.ai.azure.com",
-    api_key=GITHUB_TOKEN
+    api_key=GITHUB_TOKEN,
+    timeout=60.0  # Tempo limite estendido para evitar erros de conexão ao processar imagens
 )
 
 @st.cache_resource 
